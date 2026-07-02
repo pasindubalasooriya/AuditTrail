@@ -1,0 +1,6 @@
+# Local documentation / planning notes — kept out of version control by request
+docs/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
