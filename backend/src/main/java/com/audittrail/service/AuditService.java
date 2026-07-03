@@ -7,12 +7,16 @@ import com.audittrail.dto.RefundRequest;
 import com.audittrail.exception.DuplicateFraudFlagException;
 import com.audittrail.model.AuditEvent;
 import com.audittrail.repository.AuditEventRepository;
+import jakarta.persistence.criteria.Predicate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -56,14 +60,34 @@ public class AuditService {
             request.getPage(),
             request.getSize(),
             Sort.by(Sort.Direction.DESC, "performedAt"));
-        return repository.searchEvents(
-            request.getActionType(),
-            request.getMerchantId(),
-            request.getPerformedBy(),
-            request.getRiskLevel(),
-            request.getFromDate(),
-            request.getToDate(),
-            pageable);
+
+        // Build the WHERE clause dynamically: add a condition ONLY for the filters
+        // that were actually provided. No conditions = match everything. This avoids
+        // the ":param IS NULL OR ..." pattern that Postgres can't type-infer.
+        Specification<AuditEvent> spec = (root, query, cb) -> {
+            List<Predicate> filters = new ArrayList<>();
+            if (request.getActionType() != null) {
+                filters.add(cb.equal(root.get("actionType"), request.getActionType()));
+            }
+            if (request.getMerchantId() != null) {
+                filters.add(cb.equal(root.get("merchantId"), request.getMerchantId()));
+            }
+            if (request.getPerformedBy() != null) {
+                filters.add(cb.equal(root.get("performedBy"), request.getPerformedBy()));
+            }
+            if (request.getRiskLevel() != null) {
+                filters.add(cb.equal(root.get("riskLevel"), request.getRiskLevel()));
+            }
+            if (request.getFromDate() != null) {
+                filters.add(cb.greaterThanOrEqualTo(root.<Instant>get("performedAt"), request.getFromDate()));
+            }
+            if (request.getToDate() != null) {
+                filters.add(cb.lessThanOrEqualTo(root.<Instant>get("performedAt"), request.getToDate()));
+            }
+            return cb.and(filters.toArray(new Predicate[0]));
+        };
+
+        return repository.findAll(spec, pageable);
     }
 
     public DashboardSummary getDashboardSummary() {
