@@ -1,5 +1,5 @@
-// Thin wrapper around the AuditTrail backend. We send the OIDC id_token as the bearer,
-// because WSO2 IS 7.3 carries the roles claim in the id_token (see the backend security notes).
+// Thin wrapper around the AuditTrail backend. Callers pass the OIDC access_token as
+// the bearer credential (see Dashboard.jsx).
 
 const BASE = 'http://localhost:8080/api/audit'
 

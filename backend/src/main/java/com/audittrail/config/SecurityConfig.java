@@ -1,5 +1,8 @@
 package com.audittrail.config;
 
+import com.nimbusds.jose.JOSEObjectType;
+import com.nimbusds.jose.proc.DefaultJOSEObjectTypeVerifier;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -8,6 +11,9 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.JwtValidators;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
@@ -26,8 +32,30 @@ public class SecurityConfig {
 
     private final SecurityExceptionHandler securityExceptionHandler;
 
+    @Value("${spring.security.oauth2.resourceserver.jwt.jwk-set-uri}")
+    private String jwkSetUri;
+
+    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri}")
+    private String issuerUri;
+
     public SecurityConfig(SecurityExceptionHandler securityExceptionHandler) {
         this.securityExceptionHandler = securityExceptionHandler;
+    }
+
+    /**
+     * WSO2 issues access tokens as RFC 9068 "JWT access tokens", tagged with the
+     * JOSE header {@code typ: at+jwt}. Spring's auto-configured decoder only accepts
+     * {@code typ: JWT} (or no typ header) and rejects at+jwt before checking the
+     * signature, so we build the decoder explicitly and widen the allowed types.
+     */
+    @Bean
+    public JwtDecoder jwtDecoder() {
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(jwkSetUri)
+                .jwtProcessorCustomizer(processor -> processor.setJWSTypeVerifier(
+                        new DefaultJOSEObjectTypeVerifier<>(new JOSEObjectType("at+jwt"), JOSEObjectType.JWT, null)))
+                .build();
+        decoder.setJwtValidator(JwtValidators.createDefaultWithIssuer(issuerUri));
+        return decoder;
     }
 
     @Bean

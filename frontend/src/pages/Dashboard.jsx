@@ -17,7 +17,9 @@ function parseRoles(profile) {
 export default function Dashboard() {
   const auth = useAuth()
   const profile = auth.user?.profile || {}
-  const token = auth.user?.id_token
+  // The access_token (not the id_token) is the correct bearer credential for API
+  // calls; WSO2 is configured to carry the same roles claim on it.
+  const token = auth.user?.access_token
   const username = profile.sub
   const roles = parseRoles(profile)
   const isAnalyst = roles.includes('FRAUD_ANALYST')
