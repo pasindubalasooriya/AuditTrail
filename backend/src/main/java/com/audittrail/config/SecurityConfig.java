@@ -10,6 +10,9 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
 import java.util.Collection;
@@ -30,6 +33,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            // Allow the React dev origin (browser preflight + calls)
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             // Token-based API: no cookies, no CSRF, no server session
             .csrf(csrf -> csrf.disable())
             .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -48,19 +53,25 @@ public class SecurityConfig {
     }
 
     /**
-     * WSO2 puts roles in a single string claim, e.g. "roles": "FRAUD_ANALYST"
-     * (comma-separated if multiple). Spring's hasRole('X') looks for authority "ROLE_X",
-     * so we split the string and prefix each role with ROLE_.
+     * WSO2 puts roles in a "roles" claim, but the shape varies: a comma-separated
+     * string for Application-audience roles, or a JSON array for Organization-audience
+     * roles. Spring's hasRole('X') looks for authority "ROLE_X", so we normalize
+     * either shape into a list and prefix each role with ROLE_.
      */
     @Bean
     public JwtAuthenticationConverter jwtAuthenticationConverter() {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
-            String roles = jwt.getClaimAsString("roles");
-            if (roles == null || roles.isBlank()) {
-                return List.of();
+            Object claim = jwt.getClaim("roles");
+            List<String> roles;
+            if (claim instanceof Collection<?> collection) {
+                roles = collection.stream().map(String::valueOf).collect(Collectors.toList());
+            } else if (claim instanceof String str) {
+                roles = Arrays.asList(str.split(","));
+            } else {
+                roles = List.of();
             }
-            Collection<GrantedAuthority> authorities = Arrays.stream(roles.split(","))
+            Collection<GrantedAuthority> authorities = roles.stream()
                     .map(String::trim)
                     .filter(s -> !s.isEmpty())
                     .map(role -> (GrantedAuthority) new SimpleGrantedAuthority("ROLE_" + role))
@@ -68,5 +79,17 @@ public class SecurityConfig {
             return authorities;
         });
         return converter;
+    }
+
+    /** CORS for the Vite dev server (http://localhost:5173). */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(List.of("http://localhost:5173"));
+        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type"));
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", config);
+        return source;
     }
 }
