@@ -2,7 +2,7 @@
 
 A production-style **payment-gateway compliance audit system**: every sensitive action is recorded
 with a **cryptographically verified identity**, and audit records **physically cannot be altered or
-deleted** — enforced at the database, not just in application code.
+deleted** - enforced at the database, not just in application code.
 
 Built to demonstrate hands-on WSO2 Identity Server, Spring Boot, OAuth2/JWT, and PostgreSQL.
 
@@ -10,18 +10,18 @@ Built to demonstrate hands-on WSO2 Identity Server, Spring Boot, OAuth2/JWT, and
 
 ## The problem it solves
 
-When something goes wrong in a payment gateway — a fraudulent transaction approved, an unjustified
-refund, a merchant onboarded without checks — regulators ask: *who authorised this, when, and under
+When something goes wrong in a payment gateway - a fraudulent transaction approved, an unjustified
+refund, a merchant onboarded without checks - regulators ask: *who authorised this, when, and under
 what role?* Real audit findings recur because logs are missing, tied to **shared admin accounts**,
 or **editable after the fact**. AuditTrail closes those gaps:
 
-- **Identity from a signed token, not a request field** — you can only act as `sara` by
+- **Identity from a signed token, not a request field** - you can only act as `sara` by
   authenticating as `sara`; the identity is extracted from a JWT signed by WSO2, never user-supplied.
-- **Database-level immutability** — a PostgreSQL trigger blocks `UPDATE`/`DELETE` on the audit log,
+- **Database-level immutability** - a PostgreSQL trigger blocks `UPDATE`/`DELETE` on the audit log,
   and the application's DB user isn't even *granted* those privileges (defense in depth).
-- **Role-based separation of duties** — a fraud analyst can flag transactions but not pull
+- **Role-based separation of duties** - a fraud analyst can flag transactions but not pull
   compliance reports; a compliance officer, vice-versa.
-- **Versioned schema** — every structural change is a Flyway migration committed to git.
+- **Versioned schema** - every structural change is a Flyway migration committed to git.
 
 ## Tech stack
 
@@ -60,14 +60,14 @@ EventsTable), with `auth` (OIDC config) and `api` (backend client).
 ## Security model
 
 **1. Verified identity.** The client sends the OIDC **access_token** as the bearer credential
-(standard OAuth2 usage — the id_token authenticates the user to the SPA, the access_token
+(standard OAuth2 usage - the id_token authenticates the user to the SPA, the access_token
 authorizes API calls). WSO2's app is configured to issue JWT access tokens (RFC 9068,
 `typ: at+jwt`) carrying the same `sub`/`roles` claims as the id_token. The resource server
 validates the signature against WSO2's JWKS, checks the issuer and expiry, and reads the
-username from `sub`. `performedBy` on every record comes from this token — impossible to forge.
+username from `sub`. `performedBy` on every record comes from this token - impossible to forge.
 
-**2. Immutability — two independent layers.**
-- *Privilege layer:* the app connects as `audittrail_app`, granted only `SELECT, INSERT` — so
+**2. Immutability - two independent layers.**
+- *Privilege layer:* the app connects as `audittrail_app`, granted only `SELECT, INSERT` - so
   `UPDATE`/`DELETE` fail with `permission denied` before anything else runs.
 - *Trigger layer:* `V2__add_immutable_log_trigger.sql` raises an exception on any `UPDATE`/`DELETE`,
   so even a privileged role cannot tamper.
@@ -81,7 +81,7 @@ converter maps them to Spring authorities, and `@PreAuthorize` guards each endpo
 
 ### Prerequisites
 Java 17 (Corretto) and Java 21 (for WSO2), PostgreSQL 16, Docker (for integration tests),
-WSO2 Identity Server 7.3, Node.js (for the frontend). No global Maven needed — use the
+WSO2 Identity Server 7.3, Node.js (for the frontend). No global Maven needed - use the
 `./mvnw` wrapper.
 
 ### 1. Database + least-privilege user
@@ -114,7 +114,7 @@ GRANT USAGE, SELECT ON SEQUENCE audit_events_id_seq TO audittrail_app;
   keytool -importcert -alias wso2carbon -file wso2carbon.pem -cacerts -storepass changeit
   ```
 
-### 3. Backend — environment variables & run
+### 3. Backend - environment variables & run
 ```powershell
 $env:DB_PASSWORD = '<app-password>'          # audittrail_app
 $env:FLYWAY_PASSWORD = '<postgres-password>' # Flyway runs migrations as owner
@@ -140,9 +140,9 @@ cd backend
 .\mvnw.cmd verify    # + Testcontainers immutability test (Docker must be running)
 ```
 
-- `AuditServiceTest` — identity provenance, duplicate-flag rule, dashboard aggregation
-- `AuditControllerSecurityTest` — the RBAC matrix (401 / 403 / 2xx)
-- `AuditImmutabilityIT` — real PostgreSQL; proves `UPDATE`/`DELETE` are rejected by the trigger
+- `AuditServiceTest` - identity provenance, duplicate-flag rule, dashboard aggregation
+- `AuditControllerSecurityTest` - the RBAC matrix (401 / 403 / 2xx)
+- `AuditImmutabilityIT` - real PostgreSQL; proves `UPDATE`/`DELETE` are rejected by the trigger
 
 ---
 
@@ -167,11 +167,11 @@ Errors return a consistent JSON shape: `{ "error", "status", "timestamp" }` (401
 
 ## Notable design decisions
 
-- **`BigDecimal` + `DECIMAL(19,2)`** for money — exact, no floating-point drift.
-- **`TIMESTAMPTZ` + `Instant`** for audit times — unambiguous across time zones.
-- **JPA Specification** for dynamic search — avoids the `:param IS NULL OR …` pattern that Postgres
+- **`BigDecimal` + `DECIMAL(19,2)`** for money - exact, no floating-point drift.
+- **`TIMESTAMPTZ` + `Instant`** for audit times - unambiguous across time zones.
+- **JPA Specification** for dynamic search - avoids the `:param IS NULL OR …` pattern that Postgres
   can't type-infer.
-- **Immutability in the database**, not app code — app-level rules can be bypassed; the DB engine
+- **Immutability in the database**, not app code - app-level rules can be bypassed; the DB engine
   cannot.
 
 ## Known trade-offs (dev scope)
