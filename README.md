@@ -28,6 +28,7 @@ or **editable after the fact**. AuditTrail closes those gaps:
 | Layer | Technology |
 |---|---|
 | Identity Provider | WSO2 Identity Server 7.3 (runs on Java 21) |
+| Frontend | React 18, Vite, Tailwind CSS, react-oidc-context (OIDC Auth Code + PKCE) |
 | Backend | Java 17 (Amazon Corretto), Spring Boot 3.5.16, Maven |
 | Security | Spring Security OAuth2 Resource Server (JWT via WSO2 JWKS) |
 | Persistence | Spring Data JPA / Hibernate, `ddl-auto=none` |
@@ -38,23 +39,32 @@ or **editable after the fact**. AuditTrail closes those gaps:
 ## Architecture
 
 ```
-Client ──JWT (Bearer)──▶ Spring Boot API (:8080) ──▶ PostgreSQL (:5432)
-                              │  validates signature via WSO2 JWKS
-                              ▼
-                    WSO2 Identity Server (:9443)  ← issues signed tokens, holds users/roles
+Browser ──Auth Code + PKCE──▶ WSO2 Identity Server (:9443)  ← issues tokens, holds users/roles
+   │                                     │
+   │  React SPA (:5173)                  │ JWKS (signature verification)
+   ▼                                     ▼
+access_token (Bearer) ───────▶ Spring Boot API (:8080) ──▶ PostgreSQL (:5432)
 ```
 
+The SPA authenticates the user against WSO2 and receives an id_token (for the browser session)
+and an access_token (sent as the API bearer). The resource server validates the access_token's
+signature against WSO2's JWKS and reads `sub`/`roles` from its claims.
+
 Backend layout (`backend/src/main/java/com/audittrail/`): `controller` → `service` → `repository`
-→ `model`, with `dto`, `exception`, and `config` (security). The React frontend is future work.
+→ `model`, with `dto`, `exception`, and `config` (security). Frontend layout (`frontend/src/`):
+`pages` (Login, Dashboard) → `components` (NavBar, SummaryCards, Actions, HighRiskPanel,
+EventsTable), with `auth` (OIDC config) and `api` (backend client).
 
 ---
 
 ## Security model
 
-**1. Verified identity.** The client sends an OIDC **id_token** (WSO2 IS 7.3 releases user roles
-into the id_token, not the access token). The resource server validates the signature against WSO2's
-JWKS, checks the issuer and expiry, and reads the username from `sub`. `performedBy` on every record
-comes from this token — impossible to forge.
+**1. Verified identity.** The client sends the OIDC **access_token** as the bearer credential
+(standard OAuth2 usage — the id_token authenticates the user to the SPA, the access_token
+authorizes API calls). WSO2's app is configured to issue JWT access tokens (RFC 9068,
+`typ: at+jwt`) carrying the same `sub`/`roles` claims as the id_token. The resource server
+validates the signature against WSO2's JWKS, checks the issuer and expiry, and reads the
+username from `sub`. `performedBy` on every record comes from this token — impossible to forge.
 
 **2. Immutability — two independent layers.**
 - *Privilege layer:* the app connects as `audittrail_app`, granted only `SELECT, INSERT` — so
@@ -71,7 +81,8 @@ converter maps them to Spring authorities, and `@PreAuthorize` guards each endpo
 
 ### Prerequisites
 Java 17 (Corretto) and Java 21 (for WSO2), PostgreSQL 16, Docker (for integration tests),
-WSO2 Identity Server 7.3. No global Maven needed — use the `./mvnw` wrapper.
+WSO2 Identity Server 7.3, Node.js (for the frontend). No global Maven needed — use the
+`./mvnw` wrapper.
 
 ### 1. Database + least-privilege user
 ```sql
@@ -89,9 +100,13 @@ GRANT USAGE, SELECT ON SEQUENCE audit_events_id_seq TO audittrail_app;
 ### 2. WSO2 Identity Server
 - Start with Java 21: `$env:JAVA_HOME="<jdk21>"; .\bin\wso2server.bat`; console at
   `https://localhost:9443/console` (admin/admin).
-- Register a **Standard-Based** OAuth2/OIDC app; enable **Password** + **Code** grants; access
-  token type **JWT**.
-- Create roles `FRAUD_ANALYST`, `COMPLIANCE_OFFICER`; users `sara`/`joe`; assign roles.
+- Register a **Single-Page Application** template app (public client, PKCE) for the React
+  frontend: redirect URI `http://localhost:5173/`, grant **Code**; **Access Token → Token Type:
+  JWT** (WSO2 then issues RFC 9068 `at+jwt` access tokens carrying the same claims as the id_token).
+- **Roles:** create `FRAUD_ANALYST` / `COMPLIANCE_OFFICER` under **User Management → Roles**
+  with **Audience: Organization** (not Application) so the SPA app can see them; assign
+  `sara`→`FRAUD_ANALYST`, `joe`→`COMPLIANCE_OFFICER`. On the app itself, set **Roles tab →
+  Role Audience: Organization** to match.
 - **User Attributes:** enable the **Roles** attribute; set **Subject → alternate subject
   identifier → Username** (otherwise `sub` is a UUID).
 - **Trust the cert:** import WSO2's TLS cert into the JDK truststore so the backend can fetch JWKS:
@@ -99,12 +114,20 @@ GRANT USAGE, SELECT ON SEQUENCE audit_events_id_seq TO audittrail_app;
   keytool -importcert -alias wso2carbon -file wso2carbon.pem -cacerts -storepass changeit
   ```
 
-### 3. Environment variables & run
+### 3. Backend — environment variables & run
 ```powershell
 $env:DB_PASSWORD = '<app-password>'          # audittrail_app
 $env:FLYWAY_PASSWORD = '<postgres-password>' # Flyway runs migrations as owner
 cd backend
 .\mvnw.cmd spring-boot:run                    # starts on :8080, Flyway builds the schema
+```
+
+### 4. Frontend
+```powershell
+cd frontend
+cp .env.example .env    # set VITE_OIDC_CLIENT_ID to the SPA app's client ID
+npm install
+npm run dev              # starts on :5173
 ```
 
 ---
@@ -153,8 +176,6 @@ Errors return a consistent JSON shape: `{ "error", "status", "timestamp" }` (401
 
 ## Known trade-offs (dev scope)
 
-- Clients send the **id_token** as the bearer because WSO2 IS 7.3 keeps roles out of the access
-  token by default. In production you'd inject roles into the access token via a Pre-Issue Access
-  Token action.
 - WSO2's self-signed cert is trusted via the local JDK truststore (dev only).
-- Future work: React dashboard, and hash-chaining rows for tamper *detection* (beyond prevention).
+- Future work: hash-chaining rows (`prev_hash`/`row_hash`) for tamper *detection* on top of the
+  existing tamper *prevention*.
