@@ -98,6 +98,9 @@ GRANT USAGE, SELECT ON SEQUENCE audit_events_id_seq TO audittrail_app;
 ```
 
 ### 2. WSO2 Identity Server
+- Download WSO2 Identity Server 7.3 from the
+  [wso2/product-is GitHub releases](https://github.com/wso2/product-is/releases) page
+  (the OSS distribution zip) and unzip it anywhere.
 - Start with Java 21: `$env:JAVA_HOME="<jdk21>"; .\bin\wso2server.bat`; console at
   `https://localhost:9443/console` (admin/admin).
 - Register a **Single-Page Application** template app (public client, PKCE) for the React
@@ -107,7 +110,9 @@ GRANT USAGE, SELECT ON SEQUENCE audit_events_id_seq TO audittrail_app;
   with **Audience: Organization** (not Application) so the SPA app can see them; assign
   `sara`→`FRAUD_ANALYST`, `joe`→`COMPLIANCE_OFFICER`. On the app itself, set **Roles tab →
   Role Audience: Organization** to match.
-- **User Attributes:** enable the **Roles** attribute; set **Subject → alternate subject
+- **User Attributes:** enable the **Roles** attribute for both the **ID Token** and the
+  **Access Token** columns (otherwise `roles` is only present on the id_token, not the
+  access_token the backend actually validates); set **Subject → alternate subject
   identifier → Username** (otherwise `sub` is a UUID).
 - **Trust the cert:** import WSO2's TLS cert into the JDK truststore so the backend can fetch JWKS:
   ```
